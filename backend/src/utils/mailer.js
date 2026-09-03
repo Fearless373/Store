@@ -1,27 +1,5 @@
-const nodemailer = require('nodemailer');
-
-let transporter = null;
-
-function getTransporter() {
-  if (!transporter) {
-    const requiredSettings = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'];
-    const missingSettings = requiredSettings.filter((setting) => !process.env[setting]);
-    if (missingSettings.length > 0) {
-      throw new Error(`SMTP is not configured. Missing: ${missingSettings.join(', ')}`);
-    }
-
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: Number(process.env.SMTP_PORT) === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-  return transporter;
-}
+// Sends transactional email via the Resend API (https://resend.com/docs/api-reference/emails/send-email).
+// Uses the built-in fetch (Node 18+) so no extra HTTP client dependency is needed.
 
 function generateVerificationCode() {
   // 6-digit numeric code, e.g. "042817"
@@ -29,14 +7,27 @@ function generateVerificationCode() {
 }
 
 async function sendVerificationEmail(toEmail, firstName, code) {
-  const mailer = getTransporter();
-  await mailer.sendMail({
-    from: process.env.SMTP_FROM,
-    to: toEmail,
-    subject: 'Verify your Provision Store account',
-    text: `Hi ${firstName},\n\nYour verification code is ${code}. It expires in 10 minutes.\n\nIf you didn't request this, you can ignore this email.`,
-    html: `<p>Hi ${firstName},</p><p>Your verification code is:</p><p style="font-size:24px;font-weight:600;letter-spacing:4px;">${code}</p><p>It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM,
+      to: toEmail,
+      subject: 'Verify your Provision Store account',
+      text: `Hi ${firstName},\n\nYour verification code is ${code}. It expires in 10 minutes.\n\nIf you didn't request this, you can ignore this email.`,
+      html: `<p>Hi ${firstName},</p><p>Your verification code is:</p><p style="font-size:24px;font-weight:600;letter-spacing:4px;">${code}</p><p>It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
+    }),
   });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Resend API error (${res.status}): ${body}`);
+  }
+
+  return res.json();
 }
 
 module.exports = { generateVerificationCode, sendVerificationEmail };

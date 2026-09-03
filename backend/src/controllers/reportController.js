@@ -1,47 +1,61 @@
-const pool = require('../config/db');
+const { getDB } = require('../config/db');
 
-// GET /api/reports/daily?date=YYYY-MM-DD  (defaults to today, server timezone)
+function dayRange(dateStr) {
+  const start = new Date(`${dateStr}T00:00:00.000Z`);
+  const end = new Date(`${dateStr}T23:59:59.999Z`);
+  return { start, end };
+}
+
+// GET /api/reports/daily?date=YYYY-MM-DD  (defaults to today, UTC)
 async function dailyReport(req, res) {
   const date = req.query.date || new Date().toISOString().slice(0, 10);
+  const { start, end } = dayRange(date);
+  const transactions = getDB().collection('transactions');
 
   try {
-    const summary = await pool.query(
-      `SELECT
-         COUNT(*)::int AS transaction_count,
-         COALESCE(SUM(total_amount), 0) AS total_revenue
-       FROM transactions
-       WHERE created_at::date = $1`,
-      [date]
-    );
+    const match = { created_at: { $gte: start, $lte: end } };
 
-    const byPaymentMethod = await pool.query(
-      `SELECT payment_method, COUNT(*)::int AS count, COALESCE(SUM(total_amount), 0) AS total
-       FROM transactions
-       WHERE created_at::date = $1
-       GROUP BY payment_method
-       ORDER BY total DESC`,
-      [date]
-    );
+    const [summary] = await transactions.aggregate([
+      { $match: match },
+      { $group: { _id: null, transaction_count: { $sum: 1 }, total_revenue: { $sum: '$total_amount' } } },
+    ]).toArray();
 
-    const topItems = await pool.query(
-      `SELECT p.id, p.name, SUM(ti.quantity)::int AS units_sold,
-              SUM(ti.quantity * ti.unit_price) AS revenue
-       FROM transaction_items ti
-       JOIN transactions t ON t.id = ti.transaction_id
-       JOIN products p ON p.id = ti.product_id
-       WHERE t.created_at::date = $1
-       GROUP BY p.id, p.name
-       ORDER BY units_sold DESC
-       LIMIT 10`,
-      [date]
-    );
+    const byPaymentMethod = await transactions.aggregate([
+      { $match: match },
+      { $group: { _id: '$payment_method', count: { $sum: 1 }, total: { $sum: '$total_amount' } } },
+      { $sort: { total: -1 } },
+    ]).toArray();
+
+    const topItems = await transactions.aggregate([
+      { $match: match },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.product_id',
+          name: { $first: '$items.product_name' },
+          units_sold: { $sum: '$items.quantity' },
+          revenue: { $sum: { $multiply: ['$items.quantity', '$items.unit_price'] } },
+        },
+      },
+      { $sort: { units_sold: -1 } },
+      { $limit: 10 },
+    ]).toArray();
 
     res.json({
       date,
-      transaction_count: summary.rows[0].transaction_count,
-      total_revenue: summary.rows[0].total_revenue,
-      payment_breakdown: byPaymentMethod.rows,
-      top_items: topItems.rows,
+      transaction_count: summary?.transaction_count || 0,
+      total_revenue: summary?.total_revenue || 0,
+      payment_breakdown: byPaymentMethod.map((row) => ({
+        payment_method: row._id,
+        count: row.count,
+        total: row.total,
+      })),
+      top_items: topItems.map((row) => ({
+        id: row._id ? row._id.toString() : null,
+        name: row.name,
+        units_sold: row.units_sold,
+        revenue: row.revenue,
+      })),
     });
   } catch (err) {
     console.error(err);

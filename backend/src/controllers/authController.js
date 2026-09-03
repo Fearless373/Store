@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const pool = require('../config/db');
+const { getDB } = require('../config/db');
 const { generateVerificationCode, sendVerificationEmail } = require('../utils/mailer');
 
 const CODE_TTL_MINUTES = 10;
@@ -8,7 +8,7 @@ const CODE_TTL_MINUTES = 10;
 function signToken(user) {
   const fullName = `${user.first_name} ${user.last_name}`;
   return jwt.sign(
-    { id: user.id, name: fullName, role: user.role },
+    { id: user._id.toString(), name: fullName, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );
@@ -16,7 +16,7 @@ function signToken(user) {
 
 function publicUser(user) {
   return {
-    id: user.id,
+    id: user._id.toString(),
     name: `${user.first_name} ${user.last_name}`,
     first_name: user.first_name,
     last_name: user.last_name,
@@ -41,11 +41,12 @@ async function register(req, res) {
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   }
 
-  let client;
   try {
-    client = await pool.connect();
-    const existing = await client.query('SELECT id, email_verified FROM users WHERE email = $1', [email]);
-    if (existing.rows.length > 0 && existing.rows[0].email_verified) {
+    const users = getDB().collection('users');
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const existing = await users.findOne({ email: normalizedEmail });
+    if (existing && existing.email_verified) {
       return res.status(409).json({ error: 'An account with that email already exists.' });
     }
 
@@ -53,44 +54,39 @@ async function register(req, res) {
     const code = generateVerificationCode();
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000);
 
-    let user;
-    if (existing.rows.length > 0) {
+    const doc = {
+      first_name,
+      last_name,
+      email: normalizedEmail,
+      password_hash: passwordHash,
+      role: 'cashier',
+      email_verified: false,
+      verification_code: code,
+      verification_code_expires_at: expiresAt,
+      created_at: new Date(),
+    };
+
+    if (existing) {
       // Unverified account re-registering: overwrite details and issue a fresh code.
-      const result = await client.query(
-        `UPDATE users SET first_name=$1, last_name=$2, password_hash=$3,
-           verification_code=$4, verification_code_expires_at=$5
-         WHERE email=$6 RETURNING *`,
-        [first_name, last_name, passwordHash, code, expiresAt, email]
-      );
-      user = result.rows[0];
+      await users.updateOne({ _id: existing._id }, { $set: doc });
     } else {
-      const result = await client.query(
-        `INSERT INTO users (first_name, last_name, email, password_hash, role, verification_code, verification_code_expires_at)
-         VALUES ($1,$2,$3,$4,'cashier',$5,$6) RETURNING *`,
-        [first_name, last_name, email, passwordHash, code, expiresAt]
-      );
-      user = result.rows[0];
+      await users.insertOne(doc);
     }
 
     try {
-      await sendVerificationEmail(email, first_name, code);
+      await sendVerificationEmail(normalizedEmail, first_name, code);
     } catch (mailErr) {
       console.error('Failed to send verification email:', mailErr);
       return res.status(502).json({ error: 'Could not send the verification email. Please try again.' });
     }
 
-    res.status(201).json({ message: 'Verification code sent.', email: user.email });
+    res.status(201).json({ message: 'Verification code sent.', email: normalizedEmail });
   } catch (err) {
     console.error(err);
-    if (err.code === '23505') {
+    if (err.code === 11000) {
       return res.status(409).json({ error: 'An account with that email already exists.' });
     }
-    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ENETUNREACH') {
-      return res.status(503).json({ error: 'Database is unavailable. Start PostgreSQL and try again.' });
-    }
     res.status(500).json({ error: 'Registration failed due to a server error.' });
-  } finally {
-    if (client) client.release();
   }
 }
 
@@ -103,8 +99,9 @@ async function verify(req, res) {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    const user = result.rows[0];
+    const users = getDB().collection('users');
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await users.findOne({ email: normalizedEmail });
 
     if (!user) return res.status(404).json({ error: 'No pending signup found for that email.' });
     if (user.email_verified) return res.status(400).json({ error: 'This account is already verified.' });
@@ -115,12 +112,11 @@ async function verify(req, res) {
       return res.status(400).json({ error: 'This code has expired. Request a new one.' });
     }
 
-    const updated = await pool.query(
-      `UPDATE users SET email_verified = TRUE, verification_code = NULL, verification_code_expires_at = NULL
-       WHERE id = $1 RETURNING *`,
-      [user.id]
+    await users.updateOne(
+      { _id: user._id },
+      { $set: { email_verified: true }, $unset: { verification_code: '', verification_code_expires_at: '' } }
     );
-    const verifiedUser = updated.rows[0];
+    const verifiedUser = { ...user, email_verified: true };
 
     res.json({ token: signToken(verifiedUser), user: publicUser(verifiedUser) });
   } catch (err) {
@@ -135,19 +131,21 @@ async function resendCode(req, res) {
   if (!email) return res.status(400).json({ error: 'Email is required.' });
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    const user = result.rows[0];
+    const users = getDB().collection('users');
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await users.findOne({ email: normalizedEmail });
+
     if (!user) return res.status(404).json({ error: 'No pending signup found for that email.' });
     if (user.email_verified) return res.status(400).json({ error: 'This account is already verified.' });
 
     const code = generateVerificationCode();
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000);
-    await pool.query(
-      'UPDATE users SET verification_code = $1, verification_code_expires_at = $2 WHERE id = $3',
-      [code, expiresAt, user.id]
+    await users.updateOne(
+      { _id: user._id },
+      { $set: { verification_code: code, verification_code_expires_at: expiresAt } }
     );
 
-    await sendVerificationEmail(user.email, user.first_name, code);
+    await sendVerificationEmail(normalizedEmail, user.first_name, code);
     res.json({ message: 'A new code has been sent.' });
   } catch (err) {
     console.error(err);
@@ -165,8 +163,8 @@ async function login(req, res) {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    const user = result.rows[0];
+    const users = getDB().collection('users');
+    const user = await users.findOne({ email: email.toLowerCase().trim() });
 
     if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
 
@@ -180,9 +178,6 @@ async function login(req, res) {
     res.json({ token: signToken(user), user: publicUser(user) });
   } catch (err) {
     console.error(err);
-    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ENETUNREACH' || err.code === '28P01' || err.code === '3D000') {
-      return res.status(503).json({ error: 'Database is unavailable. Check DATABASE_URL and PostgreSQL, then try again.' });
-    }
     res.status(500).json({ error: 'Login failed due to a server error.' });
   }
 }

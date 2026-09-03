@@ -1,12 +1,35 @@
-const { Pool } = require('pg');
+const { MongoClient, ObjectId } = require('mongodb');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+let client;
+let db;
 
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle PostgreSQL client', err);
-  process.exit(1);
-});
+async function connectDB() {
+  if (db) return db;
+  client = new MongoClient(process.env.MONGODB_URI);
+  await client.connect();
+  // Database name comes from the URI path; falls back to 'provision_store' if none given.
+  db = client.db(process.env.MONGODB_DB_NAME || undefined);
+  console.log('Connected to MongoDB.');
+  return db;
+}
 
-module.exports = pool;
+function getDB() {
+  if (!db) throw new Error('Database not connected yet. Call connectDB() at startup.');
+  return db;
+}
+
+// Helper: safely parse a route param into an ObjectId, or return null if invalid.
+function toObjectId(id) {
+  try {
+    return new ObjectId(id);
+  } catch {
+    return null;
+  }
+}
+
+function getClient() {
+  if (!client) throw new Error('Database not connected yet. Call connectDB() at startup.');
+  return client;
+}
+
+module.exports = { connectDB, getDB, getClient, toObjectId, ObjectId };

@@ -1,9 +1,13 @@
-const pool = require('../config/db');
+const { getDB, toObjectId } = require('../config/db');
+
+function serialize(cat) {
+  return { id: cat._id.toString(), name: cat.name };
+}
 
 async function listCategories(req, res) {
   try {
-    const result = await pool.query('SELECT * FROM categories ORDER BY name ASC');
-    res.json(result.rows);
+    const categories = await getDB().collection('categories').find().sort({ name: 1 }).toArray();
+    res.json(categories.map(serialize));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch categories.' });
@@ -15,11 +19,8 @@ async function createCategory(req, res) {
   if (!name) return res.status(400).json({ error: 'Category name is required.' });
 
   try {
-    const result = await pool.query(
-      'INSERT INTO categories (name) VALUES ($1) RETURNING *',
-      [name]
-    );
-    res.status(201).json(result.rows[0]);
+    const result = await getDB().collection('categories').insertOne({ name });
+    res.status(201).json({ id: result.insertedId.toString(), name });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to create category.' });
@@ -27,16 +28,18 @@ async function createCategory(req, res) {
 }
 
 async function updateCategory(req, res) {
-  const { id } = req.params;
+  const id = toObjectId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid category id.' });
   const { name } = req.body;
 
   try {
-    const result = await pool.query(
-      'UPDATE categories SET name = $1 WHERE id = $2 RETURNING *',
-      [name, id]
+    const result = await getDB().collection('categories').findOneAndUpdate(
+      { _id: id },
+      { $set: { name } },
+      { returnDocument: 'after' }
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Category not found.' });
-    res.json(result.rows[0]);
+    if (!result) return res.status(404).json({ error: 'Category not found.' });
+    res.json(serialize(result));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update category.' });
@@ -44,10 +47,19 @@ async function updateCategory(req, res) {
 }
 
 async function deleteCategory(req, res) {
-  const { id } = req.params;
+  const id = toObjectId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid category id.' });
+
   try {
-    const result = await pool.query('DELETE FROM categories WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Category not found.' });
+    const result = await getDB().collection('categories').deleteOne({ _id: id });
+    if (result.deletedCount === 0) return res.status(404).json({ error: 'Category not found.' });
+
+    // Uncategorize any products that referenced this category (mirrors ON DELETE SET NULL).
+    await getDB().collection('products').updateMany(
+      { category_id: id },
+      { $set: { category_id: null } }
+    );
+
     res.status(204).send();
   } catch (err) {
     console.error(err);
