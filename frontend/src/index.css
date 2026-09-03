@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #20332d;
+  background: #f4f1e9;
+  font-family: 'Inter', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  background: #f4f1e9;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 85% 0%, rgba(224, 164, 88, 0.16), transparent 28rem),
+    linear-gradient(135deg, #f8f6f0 0%, #f1eee5 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+input,
+button {
+  border-radius: 4px;
+}
+
+input {
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+input:focus {
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 0 0 3px rgba(47, 107, 79, 0.12);
+}
+
+.page-enter {
+  animation: page-enter 420ms ease both;
+}
+
+.brand-mark {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: #d9835b;
+  color: #fffaf2;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  box-shadow: 0 6px 14px rgba(155, 77, 45, 0.18);
+}
+
+.auth-panel {
+  border: 1px solid rgba(32, 51, 45, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.78);
+  box-shadow: 0 18px 45px rgba(46, 58, 49, 0.1);
+  padding: 2.25rem;
+  backdrop-filter: blur(10px);
+}
+
+.nav-item {
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+}
+
+.product-tile {
+  min-height: 126px;
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.7);
+  box-shadow: 0 5px 14px rgba(46, 58, 49, 0.04);
+}
+
+.product-tile:not(:disabled):hover {
+  background: #fffdf8;
+  border-color: #2f6b4f;
+  box-shadow: 0 10px 22px rgba(46, 58, 49, 0.1);
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.divider {
+  border-top: 1px solid rgba(31, 42, 36, 0.1);
+}
+
+/* Visible keyboard focus everywhere, since a card-shadow UI kit is intentionally avoided */
+:focus-visible {
+  outline: 2px solid theme('colors.herb.500');
+  outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  .auth-panel { padding: 1.5rem; }
+}
