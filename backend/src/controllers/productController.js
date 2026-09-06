@@ -1,5 +1,19 @@
 const pool = require('../config/db');
 
+// Looks up a category by name (case-insensitive), creating it if it doesn't
+// exist yet. Lets the product form accept free-typed category names instead
+// of requiring the category to already exist.
+async function findOrCreateCategoryId(name) {
+  if (!name || !name.trim()) return null;
+  const trimmed = name.trim();
+
+  const existing = await pool.query('SELECT id FROM categories WHERE LOWER(name) = LOWER($1)', [trimmed]);
+  if (existing.rows.length > 0) return existing.rows[0].id;
+
+  const inserted = await pool.query('INSERT INTO categories (name) VALUES ($1) RETURNING id', [trimmed]);
+  return inserted.rows[0].id;
+}
+
 async function listProducts(req, res) {
   const { search, category_id, low_stock } = req.query;
 
@@ -57,7 +71,7 @@ async function getProduct(req, res) {
 
 async function createProduct(req, res) {
   const {
-    name, category_id, sku, barcode,
+    name, category_name, sku, barcode,
     cost_price, selling_price, stock_quantity, low_stock_threshold,
   } = req.body;
 
@@ -66,13 +80,15 @@ async function createProduct(req, res) {
   }
 
   try {
+    const categoryId = await findOrCreateCategoryId(category_name);
+
     const result = await pool.query(
       `INSERT INTO products
         (name, category_id, sku, barcode, cost_price, selling_price, stock_quantity, low_stock_threshold)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING *`,
       [
-        name, category_id || null, sku || null, barcode || null,
+        name, categoryId, sku || null, barcode || null,
         cost_price, selling_price, stock_quantity || 0, low_stock_threshold ?? 5,
       ]
     );
@@ -89,7 +105,7 @@ async function createProduct(req, res) {
 async function updateProduct(req, res) {
   const { id } = req.params;
   const fields = [
-    'name', 'category_id', 'sku', 'barcode',
+    'name', 'sku', 'barcode',
     'cost_price', 'selling_price', 'stock_quantity', 'low_stock_threshold',
   ];
 
@@ -103,13 +119,19 @@ async function updateProduct(req, res) {
     }
   });
 
-  if (updates.length === 0) {
-    return res.status(400).json({ error: 'No fields provided to update.' });
-  }
-
-  params.push(id);
-
   try {
+    if (req.body.category_name !== undefined) {
+      const categoryId = await findOrCreateCategoryId(req.body.category_name);
+      params.push(categoryId);
+      updates.push(`category_id = $${params.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields provided to update.' });
+    }
+
+    params.push(id);
+
     const result = await pool.query(
       `UPDATE products SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING *`,
       params
