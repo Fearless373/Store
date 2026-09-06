@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const emptyForm = {
-  name: '', category_id: '', sku: '', barcode: '',
+  name: '', category_name: '', sku: '', barcode: '',
   cost_price: '', selling_price: '', stock_quantity: '', low_stock_threshold: '5',
 };
 
@@ -28,7 +28,7 @@ export default function Inventory() {
     setEditingId(product.id);
     setForm({
       name: product.name,
-      category_id: product.category_id || '',
+      category_name: product.category_name || '',
       sku: product.sku || '',
       barcode: product.barcode || '',
       cost_price: product.cost_price,
@@ -48,7 +48,7 @@ export default function Inventory() {
     setError(null);
     const payload = {
       ...form,
-      category_id: form.category_id || null,
+      category_name: form.category_name.trim() || null,
       cost_price: Number(form.cost_price),
       selling_price: Number(form.selling_price),
       stock_quantity: Number(form.stock_quantity),
@@ -134,12 +134,15 @@ export default function Inventory() {
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             className="w-full border border-ink/20 bg-transparent px-3 py-2" />
 
-          <select value={form.category_id}
-            onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-            className="w-full border border-ink/20 bg-transparent px-3 py-2">
-            <option value="">No category</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <input
+            list="category-suggestions"
+            placeholder="Category (type to create a new one)"
+            value={form.category_name}
+            onChange={(e) => setForm({ ...form, category_name: e.target.value })}
+            className="w-full border border-ink/20 bg-transparent px-3 py-2" />
+          <datalist id="category-suggestions">
+            {categories.map((c) => <option key={c.id} value={c.name} />)}
+          </datalist>
 
           <div className="flex gap-2">
             <input placeholder="SKU" value={form.sku}
