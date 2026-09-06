@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -77,14 +78,19 @@ export default function Inventory() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <p className="font-display text-xl font-semibold">Inventory</p>
-          <label className="flex items-center gap-2 text-sm text-ink/60">
-            <input
-              type="checkbox"
-              checked={showLowStockOnly}
-              onChange={(e) => setShowLowStockOnly(e.target.checked)}
-            />
-            Low stock only
-          </label>
+          <div className="flex items-center gap-4">
+            <Link to="/categories" className="text-sm text-herb-700 hover:underline">
+              Manage categories
+            </Link>
+            <label className="flex items-center gap-2 text-sm text-ink/60">
+              <input
+                type="checkbox"
+                checked={showLowStockOnly}
+                onChange={(e) => setShowLowStockOnly(e.target.checked)}
+              />
+              Low stock only
+            </label>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

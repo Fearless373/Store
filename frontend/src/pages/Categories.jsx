@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -36,7 +37,8 @@ export default function Categories() {
 
   return (
     <div className="p-6 max-w-md">
-      <p className="font-display text-xl font-semibold mb-4">Categories</p>
+      <Link to="/inventory" className="text-sm text-herb-700 hover:underline">← Back to inventory</Link>
+      <p className="font-display text-xl font-semibold mb-4 mt-2">Categories</p>
 
       <form onSubmit={handleCreate} className="flex gap-2 mb-6">
         <input

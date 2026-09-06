@@ -112,16 +112,18 @@ export default function POS() {
 
       {error && <p className="text-sm text-brick mb-3">{error}</p>}
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 md:min-h-0">
-        <ProductGrid
-          products={products}
-          categories={categories}
-          activeCategory={activeCategory}
-          onSelectCategory={setActiveCategory}
-          onAddToCart={addToCart}
-        />
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 md:min-h-0 min-w-0">
+        <div className="min-w-0">
+          <ProductGrid
+            products={products}
+            categories={categories}
+            activeCategory={activeCategory}
+            onSelectCategory={setActiveCategory}
+            onAddToCart={addToCart}
+          />
+        </div>
 
-        <div className="flex flex-col min-h-0">
+        <div className="flex flex-col min-h-0 min-w-0">
           <Cart
             items={cart}
             onChangeQuantity={changeQuantity}
